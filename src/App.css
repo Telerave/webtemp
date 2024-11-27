@@ -1,0 +1,17 @@
+.app {
+  width: 100vw;
+  height: 100vh;
+  background: linear-gradient(to bottom, #000000, #1a1a1a);
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+canvas {
+  touch-action: none;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+} 
