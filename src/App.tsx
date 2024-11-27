@@ -1,18 +1,22 @@
+/**
+ * Main application component for Telerave 2.0 landing page
+ * Implements 3D effects and device motion interaction
+ */
+import React, { useState, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { useRef, useEffect } from 'react';
+import { useRef } from 'react';
 import { useSpring, animated } from '@react-spring/three';
+import * as THREE from 'three';
 import './App.css';
 
-// Logo component with glow and motion effects
 const Logo = () => {
-  const meshRef = useRef(null);
+  const meshRef = useRef<THREE.Mesh>(null);
   const [springs, api] = useSpring(() => ({
     scale: [1, 1, 1],
     config: { mass: 1, tension: 280, friction: 60 }
   }));
 
   useEffect(() => {
-    // Device motion handler for interactive effects
     const handleMotion = (event: DeviceMotionEvent) => {
       const x = event.accelerationIncludingGravity?.x || 0;
       api.start({ scale: [1 + x * 0.01, 1 + x * 0.01, 1] });
@@ -26,7 +30,7 @@ const Logo = () => {
     <animated.mesh ref={meshRef} scale={springs.scale}>
       <planeGeometry args={[3, 3]} />
       <meshStandardMaterial 
-        color="#ffffff"
+        map={new THREE.TextureLoader().load('/telerave-logo-mini.png')}
         emissive="#ffffff"
         emissiveIntensity={0.5}
         transparent
@@ -36,9 +40,8 @@ const Logo = () => {
   );
 };
 
-// Background grid imitating professional audio equipment
 const Background = () => {
-  const gridRef = useRef(null);
+  const gridRef = useRef<THREE.Mesh>(null);
 
   useFrame((state) => {
     if (gridRef.current) {
@@ -59,16 +62,26 @@ const Background = () => {
   );
 };
 
-// Main App component
 function App() {
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setLoading(false), 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <div className="app">
-      <Canvas>
-        <ambientLight intensity={0.5} />
-        <pointLight position={[10, 10, 10]} />
-        <Background />
-        <Logo />
-      </Canvas>
+      {loading ? (
+        <div className="loading">Loading Telerave 2.0...</div>
+      ) : (
+        <Canvas>
+          <ambientLight intensity={0.5} />
+          <pointLight position={[10, 10, 10]} />
+          <Background />
+          <Logo />
+        </Canvas>
+      )}
     </div>
   );
 }

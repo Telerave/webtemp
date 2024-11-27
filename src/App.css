@@ -1,3 +1,4 @@
+/* Main application container */
 .app {
   width: 100vw;
   height: 100vh;
@@ -7,11 +8,29 @@
   overflow: hidden;
 }
 
+/* Canvas interaction settings */
 canvas {
   touch-action: none;
 }
 
+/* Reset default body styles */
 body {
   margin: 0;
   padding: 0;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.5; }
+  50% { opacity: 1; }
+  100% { opacity: 0.5; }
+}
+
+.loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 24px;
+  color: white;
+  animation: pulse 2s infinite;
 } 
