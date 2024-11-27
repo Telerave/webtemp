@@ -2,7 +2,7 @@
   "name": "telerave-web",
   "version": "0.1.0",
   "private": true,
-  "homepage": "https://ваш-username.github.io/ваш-repo-name",
+  "homepage": "https://telerave.github.io/tempweb",
   "dependencies": {
     "@react-three/drei": "^9.92.1",
     "@react-three/fiber": "^8.15.12",
