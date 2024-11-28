@@ -2,14 +2,77 @@
  * Main application component for Telerave 2.0 landing page
  * Implements 3D effects and device motion interaction
  */
-import React, { useRef, Suspense } from 'react';
+import React, { useRef, Suspense, useState, useCallback, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Effects, useTexture } from '@react-three/drei';
+import { useTexture } from '@react-three/drei';
 import * as THREE from 'three';
 import './App.css';
+import AudioPlayer from './components/AudioPlayer';
+import ParticleSystem from './components/ParticleSystem';
+import { SocialIcons } from './components/SocialIcons';
+import { TerminalOutput } from './components/TerminalOutput';
 
 // Импортируем логотип
 import logoBlackElements from './assets/logo-black-elements.png';
+
+// В начале файла добавим хук для отслеживания движений
+const useMouseRotation = (sensitivity = 0.008) => {
+  const rotation = useRef({ x: 0, y: 0 });
+  const targetRotation = useRef({ x: 0, y: 0 });
+  const isDragging = useRef(false);
+  const previousPosition = useRef({ x: 0, y: 0 });
+  const velocity = useRef({ x: 0, y: 0 });
+
+  const handlePointerMove = useCallback((e: PointerEvent) => {
+    if (!isDragging.current) return;
+
+    const deltaX = e.clientX - previousPosition.current.x;
+    const deltaY = e.clientY - previousPosition.current.y;
+
+    velocity.current = {
+      x: deltaX * sensitivity,
+      y: deltaY * sensitivity
+    };
+
+    targetRotation.current = {
+      x: targetRotation.current.x - deltaY * sensitivity,
+      y: targetRotation.current.y + deltaX * sensitivity
+    };
+
+    previousPosition.current = { x: e.clientX, y: e.clientY };
+  }, [sensitivity]);
+
+  // Обновляем обработчик нажатия
+  const handlePointerDown = useCallback((e: PointerEvent) => {
+    isDragging.current = true;
+    previousPosition.current = { x: e.clientX, y: e.clientY };
+  }, []);
+
+  const handlePointerUp = useCallback(() => {
+    isDragging.current = false;
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerleave', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerleave', handlePointerUp);
+    };
+  }, [handlePointerDown, handlePointerUp, handlePointerMove]);
+
+  return { 
+    current: rotation.current, 
+    target: targetRotation.current,
+    velocity: velocity.current,
+    isDragging: isDragging.current
+  };
+};
 
 // Создаем свою параметрическую геометрию
 const createSuperEllipsoidGeometry = (
@@ -92,64 +155,18 @@ const createSuperEllipsoidGeometry = (
   return geometry;
 };
 
-// Компонент сетки точек
-const Grid = () => {
-  const pointsRef = useRef<THREE.Points>(null);
-  const count = 50;
-  const separation = 0.7;
+// Добавим интерфейс для пропсов Logo
+interface LogoProps {
+  onFirstMove: (time: number) => void;
+}
 
-  const positions = new Float32Array(count * count * 3);
-  let i = 0;
-  for (let x = 0; x < count; x++) {
-    for (let z = 0; z < count; z++) {
-      positions[i] = x * separation - (count * separation) / 2;
-      positions[i + 1] = 0;
-      positions[i + 2] = z * separation - (count * separation) / 2;
-      i += 3;
-    }
-  }
-
-  useFrame(({ clock }) => {
-    if (pointsRef.current) {
-      const positions = pointsRef.current.geometry.attributes.position.array as Float32Array;
-      let i = 0;
-      for (let x = 0; x < count; x++) {
-        for (let z = 0; z < count; z++) {
-          const y = Math.sin(clock.elapsedTime * 0.5 + x * 0.5 + z * 0.5) * 0.2;
-          positions[i + 1] = y;
-          i += 3;
-        }
-      }
-      pointsRef.current.geometry.attributes.position.needsUpdate = true;
-    }
-  });
-
-  return (
-    <points ref={pointsRef}>
-      <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          count={positions.length / 3}
-          array={positions}
-          itemSize={3}
-        />
-      </bufferGeometry>
-      <pointsMaterial
-        size={0.015}
-        color="#4444ff"
-        transparent
-        opacity={0.3}
-        sizeAttenuation
-      />
-    </points>
-  );
-};
-
-// Обновляем компонент Logo
-const Logo = () => {
+const Logo: React.FC<LogoProps> = ({ onFirstMove }) => {
   const meshRef = useRef<THREE.Group>(null);
+  const objectPosition = useRef(new THREE.Vector3());
   const animationStartTimeRef = useRef(0);
-  const isInitialAnimationComplete = useRef(false);
+  const isInitialAnimationComplete = useRef(true);
+  const [isMovedBack, setIsMovedBack] = useState(false);
+  const moveStartTimeRef = useRef(0);
   const texture = useTexture(logoBlackElements);
   
   // Настраиваем текстуру
@@ -187,128 +204,419 @@ const Logo = () => {
     side: THREE.DoubleSide,
   });
 
+  const mouseRotation = useMouseRotation(0.008);
+  const autoRotationRef = useRef({ x: 0, y: 0 });
+  const lastRotation = useRef({ x: 0, y: 0 });
+  const isDragging = useRef(false);
+  
+  // Добавим ref для хранения инерции
+  const inertia = useRef({ x: 0, y: 0 });
+  const targetRotation = useRef({ x: 0, y: 0 });
+  
+  const touchStartTimeRef = useRef(0);
+  const accelerationRef = useRef({ x: 0, y: 0 });
+  
+  const lastInteractionTime = useRef(Date.now());
+  const isReturningToFront = useRef(false);
+  const RETURN_DELAY = 3000; // 3 секунды без взаимодействия
+  
+  // Добавим новые константы после существующих
+  const INERTIA_FACTOR = 0.015;
+  const DAMPING_FACTOR = 0.992;
+  const RETURN_SPEED = 0.98;
+  const AUTO_ROTATION_SPEED = 0.00003;
+  const BREATHING_SPEED = 0.2;
+
+  // Добавим новые константы для живой анимации
+  const LOOK_AROUND_STATES = {
+    IDLE: 'idle',
+    LOOKING: 'looking',
+    PAUSED: 'paused'
+  } as const;
+
+  // Добавим новые refs в понент Logo
+  const lookAroundState = useRef<typeof LOOK_AROUND_STATES[keyof typeof LOOK_AROUND_STATES]>(LOOK_AROUND_STATES.IDLE);
+  const lookTarget = useRef({ x: 0, y: 0 });
+  const nextLookTime = useRef(0);
+  const lookDuration = useRef(0);
+  const pauseDuration = useRef(0);
+
+  // Добавим новый ref для отслеживания времени возврата
+  const returnCompleteTime = useRef(0);
+  const DELAY_BEFORE_LOOKING = 500; // 500мс = пол секунды
+
+  const SHAKE_START_TIME = 26000; // 26 секунд
+  const SHAKE_END_TIME = 33000; // 33 секунды
+  const MAX_SHAKE_AMPLITUDE = 0.01;
+
+  const LIGHT_START_TIME = 26000;
+  const LIGHT_END_TIME = 33000;
+  const MAX_LIGHT_INTENSITY = 4;
+
+  const innerLightRef = useRef<THREE.PointLight>(null);
+
+  // Добавим функцию генерации следующего случайного движения
+  const generateNextLook = () => {
+    // Случайные значения для поворота
+    const maxRotation = 0.3;
+    const minRotation = 0.05;
+    
+    // Генерируем случайные целевые углы
+    const targetX = (Math.random() * 3 - 1) * maxRotation * 
+                   (Math.random() > 0.7 ? 1 : 0.3); // Иногда делаем кивок
+    const targetY = (Math.random() * 3 - 1) * maxRotation;
+    
+    // Случайная длительность движения (1-3 секунды)
+    const duration = 1000 + Math.random() * 2000;
+    
+    // Случайная пауза после движения (0.5-2 секунды)
+    const pause = 500 + Math.random() * 1500;
+    
+    return {
+      target: { x: targetX, y: targetY },
+      duration,
+      pause
+    };
+  };
+
+  const handlePointerDown = (e: any) => {
+    e.stopPropagation();
+    document.body.style.cursor = 'grabbing';
+    isDragging.current = true;
+    touchStartTimeRef.current = Date.now();
+    lastInteractionTime.current = Date.now(); // Обновляем время последнего взаимодействия
+    isReturningToFront.current = false; // Прерываем возвращение при взаимодействии
+    accelerationRef.current = { x: 0, y: 0 };
+
+    if (!isMovedBack) {
+      moveStartTimeRef.current = Date.now();
+      setIsMovedBack(true);
+    }
+  };
+
+  const handlePointerUp = (e: any) => {
+    e.stopPropagation();
+    document.body.style.cursor = 'grab';
+    isDragging.current = false;
+  };
+
+  const handlePointerMove = (e: any) => {
+    if (!isDragging.current) return;
+    e.stopPropagation();
+    
+    lastInteractionTime.current = Date.now(); // Обновляем время последнего взаимодействия
+    isReturningToFront.current = false; // Прерываем возвращение при взаимодействии
+    
+    const timeSinceStart = Date.now() - touchStartTimeRef.current;
+    
+    // Еще быстрее разгон
+    const accelerationDuration = 100; // уменьшили со 150 до 100мс
+    const accelerationProgress = Math.min(timeSinceStart / accelerationDuration, 1);
+    
+    // Более резкий старт
+    const easeInFactor = Math.pow(accelerationProgress, 2);
+    
+    // Значительно увеличили чувствительность
+    const sensitivity = 0.004; // увеличили с 0.0025 до 0.004
+    
+    const movementX = (e.movementX || e.deltaX || 0) * sensitivity * easeInFactor;
+    const movementY = (e.movementY || e.deltaY || 0) * sensitivity * easeInFactor;
+    
+    accelerationRef.current = {
+      x: movementX,
+      y: movementY
+    };
+    
+    // Увеличили максимальную скорость вращения
+    const maxRotation = 0.2; // увеличили с 0.15 до 0.2
+    targetRotation.current.x += Math.max(Math.min(movementY, maxRotation), -maxRotation);
+    targetRotation.current.y += Math.max(Math.min(movementX, maxRotation), -maxRotation);
+  };
+
+  // Обновим useFrame
+  const clockRef = useRef<{ elapsedTime: number }>({ elapsedTime: 0 });
+
   useFrame(({ clock }) => {
-    if (meshRef.current) {
-      if (animationStartTimeRef.current === 0) {
-        animationStartTimeRef.current = clock.getElapsedTime();
-        meshRef.current.rotation.x = 0;
-        meshRef.current.rotation.y = 0;
-        meshRef.current.rotation.z = 0;
+    // Сохраняем текущее время в ref
+    clockRef.current = clock;
+    
+    if (meshRef.current && innerLightRef.current) {
+      const time = clock.getElapsedTime();
+      const currentTime = Date.now();
+      const timeSinceMove = currentTime - moveStartTimeRef.current;
+      
+      // Проверяем, нужно ли начать возвращение
+      const timeSinceLastInteraction = currentTime - lastInteractionTime.current;
+      if (timeSinceLastInteraction > RETURN_DELAY && !isReturningToFront.current) {
+        isReturningToFront.current = true;
+        lookAroundState.current = LOOK_AROUND_STATES.IDLE;
+        returnCompleteTime.current = currentTime + DELAY_BEFORE_LOOKING;
+        targetRotation.current = {
+          x: inertia.current.x,
+          y: inertia.current.y
+        };
       }
 
-      const timeSinceStart = clock.getElapsedTime() - animationStartTimeRef.current;
-      
-      if (!isInitialAnimationComplete.current) {
-        if (timeSinceStart <= 4) {
-          // Основное покачивание головой
-          meshRef.current.rotation.z = Math.sin(timeSinceStart * Math.PI) * 0.2;
-          meshRef.current.rotation.y = timeSinceStart * 0.1;
-          meshRef.current.rotation.x = Math.sin(timeSinceStart * 0.17) * 0.1;
-        } else {
-          isInitialAnimationComplete.current = true;
-          // Сохраняем последние значения вращения для плавного перехода
-          meshRef.current.userData.lastY = meshRef.current.rotation.y;
-          meshRef.current.userData.lastZ = meshRef.current.rotation.z;
-          meshRef.current.userData.lastX = meshRef.current.rotation.x;
-          animationStartTimeRef.current = clock.getElapsedTime();
+      // Обновленная логика автовращения
+      autoRotationRef.current.y += AUTO_ROTATION_SPEED;
+      autoRotationRef.current.x = Math.sin(time * 0.3) * 0.003;
+
+      // Логика живой анимации - теперь проверяем только время
+      if (isReturningToFront.current && currentTime > returnCompleteTime.current) {
+        if (lookAroundState.current === LOOK_AROUND_STATES.IDLE) {
+          // Начинаем новое движение
+          const nextLook = generateNextLook();
+          lookTarget.current = nextLook.target;
+          lookDuration.current = nextLook.duration;
+          pauseDuration.current = nextLook.pause;
+          nextLookTime.current = currentTime + lookDuration.current;
+          lookAroundState.current = LOOK_AROUND_STATES.LOOKING;
         }
+        
+        else if (lookAroundState.current === LOOK_AROUND_STATES.LOOKING) {
+          if (currentTime < nextLookTime.current) {
+            // Плавное движение к цели
+            const progress = 1 - ((nextLookTime.current - currentTime) / lookDuration.current);
+            const easeProgress = 1 - Math.pow(1 - progress, 3);
+            
+            targetRotation.current = {
+              x: lookTarget.current.x * easeProgress,
+              y: lookTarget.current.y * easeProgress
+            };
+          } else {
+            lookAroundState.current = LOOK_AROUND_STATES.PAUSED;
+            nextLookTime.current = currentTime + pauseDuration.current;
+          }
+        }
+        
+        else if (lookAroundState.current === LOOK_AROUND_STATES.PAUSED) {
+          if (currentTime > nextLookTime.current) {
+            lookAroundState.current = LOOK_AROUND_STATES.IDLE;
+            targetRotation.current = { x: 0, y: 0 };
+          }
+        }
+      }
+      // Если идет возвращение и время для осматривания еще не пришло
+      else if (isReturningToFront.current) {
+        targetRotation.current.x *= RETURN_SPEED;
+        targetRotation.current.y *= RETURN_SPEED;
+      }
+
+      // Единая обработка инерции
+      const smoothFactor = lookAroundState.current === LOOK_AROUND_STATES.LOOKING ? 0.03 : INERTIA_FACTOR;
+      inertia.current.x += (targetRotation.current.x - inertia.current.x) * smoothFactor;
+      inertia.current.y += (targetRotation.current.y - inertia.current.y) * smoothFactor;
+      inertia.current.x *= DAMPING_FACTOR;
+      inertia.current.y *= DAMPING_FACTOR;
+
+      // Добавляем эффект дрожания
+      let shakeOffsetX = 0;
+      let shakeOffsetY = 0;
+      let shakeOffsetZ = 0;
+
+      if (isMovedBack && timeSinceMove >= SHAKE_START_TIME && timeSinceMove <= SHAKE_END_TIME) {
+        const shakeProgress = (timeSinceMove - SHAKE_START_TIME) / (SHAKE_END_TIME - SHAKE_START_TIME);
+        const intensity = Math.pow(Math.sin(shakeProgress * Math.PI), 4);
+        
+        const shakeAmount = MAX_SHAKE_AMPLITUDE * intensity;
+        const shakeSpeed = 120;
+        shakeOffsetX = Math.sin(time * shakeSpeed) * shakeAmount;
+        shakeOffsetY = Math.cos(time * shakeSpeed * 1.2) * shakeAmount;
+        shakeOffsetZ = Math.sin(time * shakeSpeed * 0.8) * shakeAmount;
+
+        // Применяем дрожание к позиции
+        meshRef.current.position.x += shakeOffsetX;
+        meshRef.current.position.y += shakeOffsetY;
+        meshRef.current.position.z += shakeOffsetZ;
+
+        // Уменьшили влияние на вращение еще больше
+        meshRef.current.rotation.x += shakeOffsetX * 0.1; // Уменьшили с 0.2 до 0.1
+        meshRef.current.rotation.y += shakeOffsetY * 0.1;
+        meshRef.current.rotation.z += shakeOffsetZ * 0.1;
+      }
+
+      if (!isMovedBack) {
+        // Базовое положение
+        const baseRotationX = 0.2 + autoRotationRef.current.x;
+        const baseRotationY = -0.3 + autoRotationRef.current.y;
+        
+        meshRef.current.rotation.x = baseRotationX + inertia.current.x + shakeOffsetX;
+        meshRef.current.rotation.y = baseRotationY + inertia.current.y + shakeOffsetY;
+        
+        // Более плавная левитация
+        const baseY = Math.sin(time * BREATHING_SPEED) * 0.08;
+        const breathingY = Math.sin(time * (BREATHING_SPEED * 1.5)) * 0.02;
+        meshRef.current.position.y = baseY + breathingY + shakeOffsetY;
+        meshRef.current.position.x = shakeOffsetX;
+        meshRef.current.position.z = shakeOffsetZ;
+        
+        // Плавное вращение по Z
+        meshRef.current.rotation.z = Math.sin(time * BREATHING_SPEED) * 0.015;
       } else {
-        const timeAfterInitial = clock.getElapsedTime() - animationStartTimeRef.current;
-        const transitionDuration = 2; // Увеличили длительность перехода
-        const transitionProgress = Math.min(timeAfterInitial / transitionDuration, 1);
-        const easeProgress = 1 - Math.cos(transitionProgress * Math.PI * 0.5); // Плавная функция перехода
+        const moveElapsedTime = (Date.now() - moveStartTimeRef.current) / 1000;
+        const moveDuration = 4.5;
+        const moveProgress = Math.min(moveElapsedTime / moveDuration, 1);
         
-        // Целевые значения для конечной анимации
-        const targetRotationX = timeAfterInitial * 0.1;
-        const targetRotationY = meshRef.current.userData.lastY + timeAfterInitial * 0.15;
+        // Более плавная функция easing
+        const easeOutProgress = 1 - Math.pow(1 - moveProgress, 4);
+        const targetZ = -3.5;
         
-        // Плавный переход между анимациями
-        meshRef.current.rotation.x = meshRef.current.userData.lastX * (1 - easeProgress) + targetRotationX * easeProgress;
-        meshRef.current.rotation.y = targetRotationY;
-        meshRef.current.rotation.z = meshRef.current.userData.lastZ * (1 - easeProgress);
+        // Уменьшенная и более плавная амплитуда отскока
+        const bounce = Math.sin(moveProgress * Math.PI) * 0.03 * 
+                      Math.pow(1 - moveProgress, 2.5);
+        meshRef.current.position.z = targetZ * easeOutProgress + bounce + shakeOffsetZ;
         
-        const scale = 1 + Math.sin(timeAfterInitial) * 0.03;
-        meshRef.current.scale.setScalar(scale);
+        // Плавное вращение после отлёта
+        meshRef.current.rotation.x = 0.2 + autoRotationRef.current.x + inertia.current.x + shakeOffsetX;
+        meshRef.current.rotation.y = -0.3 + autoRotationRef.current.y + inertia.current.y + shakeOffsetY;
+        
+        // Более плавная левитация после отлёта
+        const baseY = Math.sin(time * (BREATHING_SPEED * 0.5)) * 0.12;
+        const breathingY = Math.sin(time * (BREATHING_SPEED * 0.75)) * 0.04;
+        meshRef.current.position.y = baseY + breathingY + shakeOffsetY;
+        
+        // Плавное вращение по Z
+        meshRef.current.rotation.z = Math.sin(time * (BREATHING_SPEED * 0.5)) * 0.025;
+      }
+      
+      // Более плавная пульсация
+      const basePulse = Math.sin(time * BREATHING_SPEED) * 0.01;
+      const breathingPulse = Math.sin(time * (BREATHING_SPEED * 1.5)) * 0.005;
+      const scale = 1 + basePulse + breathingPulse;
+      meshRef.current.scale.setScalar(scale);
+
+      // Обновляем позицию объекта для системы частиц
+      objectPosition.current.set(
+        meshRef.current.position.x,
+        meshRef.current.position.y,
+        meshRef.current.position.z
+      );
+
+      // Управляем интенсивностью внутреннего света
+      if (isMovedBack && timeSinceMove >= LIGHT_START_TIME && timeSinceMove <= LIGHT_END_TIME) {
+        const lightProgress = (timeSinceMove - LIGHT_START_TIME) / (LIGHT_END_TIME - LIGHT_START_TIME);
+        const intensity = Math.pow(Math.sin(lightProgress * Math.PI), 4);
+        if (innerLightRef.current) {
+          innerLightRef.current.intensity = MAX_LIGHT_INTENSITY * intensity;
+        }
+        
+        // Уменьшили максимальную интенсивность вечения материала
+        baseMaterial.emissiveIntensity = 0.1 + intensity * 0.5; // Уменьшили с 0.9 до 0.5
+      } else {
+        if (innerLightRef.current) {
+          innerLightRef.current.intensity = 0;
+        }
+        baseMaterial.emissiveIntensity = 0.1;
       }
     }
   });
 
+  useEffect(() => {
+    if (isMovedBack && !moveStartTimeRef.current) {
+      const currentTime = Date.now();
+      moveStartTimeRef.current = currentTime;
+      onFirstMove(currentTime);
+    }
+  }, [isMovedBack, onFirstMove]);
+
   return (
-    <group ref={meshRef}>
-      {/* Основной желтый суперэллипсоид */}
-      <mesh geometry={geometry} material={baseMaterial} />
-      
-      {/* Логотипы только на передней и задней гранях */}
-      <group>
-        {/* Передняя грань */}
-        <mesh position={[0, 0, 0.902]} scale={[1.539, 1.539, 1]}>
-          <planeGeometry />
-          <primitive object={logoMaterial.clone()} />
-        </mesh>
+    <>
+      <group 
+        ref={meshRef}
+        onPointerOver={() => { document.body.style.cursor = 'grab'; }}
+        onPointerOut={() => { document.body.style.cursor = 'auto'; }}
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        onPointerMove={handlePointerMove}
+      >
+        {/* Основной желтый суперэллипсоид */}
+        <mesh geometry={geometry} material={baseMaterial} />
+        
+        {/* Добавляем внутренний вет */}
+        <pointLight
+          ref={innerLightRef}
+          position={[0, 0, 0]}
+          intensity={0}
+          distance={2}
+          color="#ffc600"
+          decay={2}
+        />
+        
+        {/* Логотипы только на передней и задней гранях */}
+        <group>
+          {/* Передняя грань */}
+          <mesh position={[0, 0, 0.902]} scale={[1.539, 1.539, 1]}>
+            <planeGeometry />
+            <primitive object={logoMaterial.clone()} />
+          </mesh>
 
-        {/* Задняя грань */}
-        <mesh position={[0, 0, -0.902]} rotation={[0, Math.PI, 0]} scale={[1.539, 1.539, 1]}>
-          <planeGeometry />
-          <primitive object={logoMaterial.clone()} />
-        </mesh>
+          {/* Задняя грань */}
+          <mesh position={[0, 0, -0.902]} rotation={[0, Math.PI, 0]} scale={[1.539, 1.539, 1]}>
+            <planeGeometry />
+            <primitive object={logoMaterial.clone()} />
+          </mesh>
+        </group>
+
+        {/* Освещение */}
+        <pointLight position={[0, 0, 0]} intensity={1.2} color="#ffffff" />
+        <pointLight position={[0.5, 0, 0]} intensity={0.8} color="#ffc600" />
+        <pointLight position={[-0.5, 0, 0]} intensity={0.8} color="#ffc600" />
       </group>
-
-      {/* Освещение */}
-      <pointLight position={[0, 0, 0]} intensity={1.2} color="#ffffff" />
-      <pointLight position={[0.5, 0, 0]} intensity={0.8} color="#ffc600" />
-      <pointLight position={[-0.5, 0, 0]} intensity={0.8} color="#ffc600" />
-    </group>
+      <ParticleSystem 
+        active={isMovedBack} 
+        objectPosition={objectPosition.current}
+        moveStartTime={moveStartTimeRef.current}
+      />
+    </>
   );
 };
 
+// Добавим интерфейсы для SocialIcons и TerminalOutput
+interface SocialIconsProps {
+  moveStartTime: number;
+}
+
+interface TerminalOutputProps {
+  moveStartTime: number;
+}
+
+// Обновим компонент App с правильной типизацией
 const App = () => {
+  const [moveStartTime, setMoveStartTime] = useState<number>(0);
+  const startTimeRef = useRef<number>(0);
+
+  const handleFirstMove = (time: number) => {
+    if (startTimeRef.current === 0) {
+      // Используем Date.now() как в ParticleSystem
+      const currentTime = Date.now();
+      startTimeRef.current = currentTime;
+      setMoveStartTime(currentTime);
+      console.log('App: Initial moveStartTime set to', currentTime);
+    }
+  };
+
   return (
     <div className="app">
+      <AudioPlayer />
       <Canvas
         camera={{ 
-          position: [0, 0, 7],
+          position: [0, 0, 2],
           fov: 45,
           near: 0.1,
           far: 1000
         }}
         gl={{
           antialias: true,
-          toneMapping: THREE.NoToneMapping,    // Отключили тонмаппинг для сохранения насыщенности
+          toneMapping: THREE.NoToneMapping,
           outputColorSpace: THREE.SRGBColorSpace
         }}
       >
         <color attach="background" args={['#000000']} />
-        
-        {/* Настроили освещение для лучшей видимости текстуры */}
-        <ambientLight intensity={0.6} />
-        
-        {/* Направленный свет для подсветки текстуры */}
-        <directionalLight 
-          position={[5, 5, 5]} 
-          intensity={2.0}
-          color="#ffffff"
-        />
-        <directionalLight 
-          position={[-5, -5, -5]} 
-          intensity={1.5}
-          color="#ffffff"
-        />
-        
-        {/* Дополнительные источники света для бликов */}
-        <pointLight position={[3, 3, 3]} intensity={1.0} color="#ffffff" />
-        <pointLight position={[-3, -3, -3]} intensity={0.8} color="#ffffff" />
-        
         <Suspense fallback={null}>
-          <Logo />
-          <Grid />
+          <Logo onFirstMove={handleFirstMove} />
+          <SocialIcons moveStartTime={startTimeRef.current} />
+          <TerminalOutput moveStartTime={startTimeRef.current} />
         </Suspense>
-        
-        <OrbitControls 
-          enableZoom={false}
-          enablePan={false}
-          minPolarAngle={Math.PI / 4}
-          maxPolarAngle={3 * Math.PI / 4}
-        />
       </Canvas>
     </div>
   );
