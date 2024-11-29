@@ -2,15 +2,15 @@
  * Main application component for Telerave 2.0 landing page
  * Implements 3D effects and device motion interaction
  */
-import React, { useRef, Suspense, useState, useCallback, useEffect } from 'react';
+import React, { useRef, Suspense, useState, useCallback, useEffect, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { useTexture } from '@react-three/drei';
 import * as THREE from 'three';
 import './App.css';
 import AudioPlayer from './components/AudioPlayer';
 import ParticleSystem from './components/ParticleSystem';
-import { SocialIcons } from './components/SocialIcons';
-import { TerminalOutput } from './components/TerminalOutput';
+import { useTimelineStore } from './store/TimelineStore';
+import SocialAndText from './components/SocialAndText';
 
 // Импортируем логотип
 import logoBlackElements from './assets/logo-black-elements.png';
@@ -155,12 +155,35 @@ const createSuperEllipsoidGeometry = (
   return geometry;
 };
 
-// Добавим интерфейс для пропсов Logo
-interface LogoProps {
-  onFirstMove: (time: number) => void;
+// В начале файла, после импортов
+const cachedGeometry = createSuperEllipsoidGeometry(
+    128,
+    128,
+    0.9,
+    0.9,
+    0.9,
+    0.5,
+    0.5
+);
+
+// Добавляем типы для iOS DeviceMotionEvent
+interface DeviceMotionEventiOS extends DeviceMotionEvent {
+  requestPermission?: () => Promise<'granted' | 'denied'>;
 }
 
-const Logo: React.FC<LogoProps> = ({ onFirstMove }) => {
+interface DeviceMotionEventiOSConstructor {
+  requestPermission?: () => Promise<'granted' | 'denied'>;
+}
+
+// Добавляем интерфейс для гироскопа
+interface GyroscopeData {
+  x: number;
+  y: number;
+  z: number;
+}
+
+// Обновляем компонент Logo
+const Logo = () => {
   const meshRef = useRef<THREE.Group>(null);
   const objectPosition = useRef(new THREE.Vector3());
   const animationStartTimeRef = useRef(0);
@@ -169,40 +192,32 @@ const Logo: React.FC<LogoProps> = ({ onFirstMove }) => {
   const moveStartTimeRef = useRef(0);
   const texture = useTexture(logoBlackElements);
   
-  // Настраиваем текстуру
-  texture.encoding = THREE.sRGBEncoding;
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.needsUpdate = true;
+  const materials = useMemo(() => {
+    texture.encoding = THREE.sRGBEncoding;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.needsUpdate = true;
 
-  const geometry = createSuperEllipsoidGeometry(
-    128,
-    128,
-    0.9,
-    0.9,
-    0.9,
-    0.5,
-    0.5
-  );
+    return {
+      base: new THREE.MeshPhysicalMaterial({
+        color: '#ffc600',
+        metalness: 0.4,
+        roughness: 0.3,
+        side: THREE.DoubleSide,
+        clearcoat: 0.6,
+        clearcoatRoughness: 0.2,
+        emissive: '#ffc600',
+        emissiveIntensity: 0.1
+      }),
+      logo: new THREE.MeshBasicMaterial({
+        map: texture,
+        transparent: true,
+        side: THREE.DoubleSide,
+      })
+    };
+  }, [texture]);
 
-  // Основной материал для суперэллипсоида
-  const baseMaterial = new THREE.MeshPhysicalMaterial({
-    color: '#ffc600',
-    metalness: 0.4,
-    roughness: 0.3,
-    side: THREE.DoubleSide,
-    clearcoat: 0.6,
-    clearcoatRoughness: 0.2,
-    emissive: '#ffc600',
-    emissiveIntensity: 0.1
-  });
-
-  // Материал для логотипа
-  const logoMaterial = new THREE.MeshBasicMaterial({
-    map: texture,
-    transparent: true,
-    side: THREE.DoubleSide,
-  });
+  const geometry = useMemo(() => cachedGeometry, []);
 
   const mouseRotation = useMouseRotation(0.008);
   const autoRotationRef = useRef({ x: 0, y: 0 });
@@ -253,7 +268,60 @@ const Logo: React.FC<LogoProps> = ({ onFirstMove }) => {
   const LIGHT_END_TIME = 33000;
   const MAX_LIGHT_INTENSITY = 4;
 
+  const LIGHT_START_TIME_2 = 59000;
+  const LIGHT_END_TIME_2 = 65000;
+
   const innerLightRef = useRef<THREE.PointLight>(null);
+
+  const setMoveStartTime = useTimelineStore(state => state.setMoveStartTime);
+
+  // Добавляем ref для данных гироскопа
+  const gyroData = useRef<GyroscopeData>({ x: 0, y: 0, z: 0 });
+  const isGyroAvailable = useRef(false);
+
+  // Добавляем обработчик движения устройства
+  useEffect(() => {
+    const handleDeviceMotion = (event: DeviceMotionEvent) => {
+      if (!event.rotationRate) return;
+      
+      const sensitivity = 0.01;
+      gyroData.current = {
+        x: (event.rotationRate.beta || 0) * sensitivity,
+        y: (event.rotationRate.gamma || 0) * sensitivity,
+        z: (event.rotationRate.alpha || 0) * sensitivity
+      };
+      
+      isGyroAvailable.current = true;
+    };
+
+    // Запрашиваем разрешение на использование гироскопа (для iOS)
+    const requestGyroPermission = async () => {
+      try {
+        // Приводим к нашему типу
+        const DeviceMotionEventIOS = DeviceMotionEvent as unknown as DeviceMotionEventiOSConstructor;
+        
+        if (typeof DeviceMotionEventIOS.requestPermission === 'function') {
+          const permission = await DeviceMotionEventIOS.requestPermission();
+          if (permission === 'granted') {
+            window.addEventListener('devicemotion', handleDeviceMotion);
+          }
+        } else {
+          // Для устройств, где не требуется разрешение
+          window.addEventListener('devicemotion', handleDeviceMotion);
+        }
+      } catch (error) {
+        console.error('Gyroscope not available:', error);
+        // Для устройств, где не поддерживается запрос разрешения
+        window.addEventListener('devicemotion', handleDeviceMotion);
+      }
+    };
+
+    requestGyroPermission();
+
+    return () => {
+      window.removeEventListener('devicemotion', handleDeviceMotion);
+    };
+  }, []);
 
   // Добавим функцию генерации следующего случайного движения
   const generateNextLook = () => {
@@ -279,45 +347,27 @@ const Logo: React.FC<LogoProps> = ({ onFirstMove }) => {
     };
   };
 
-  const handlePointerDown = (e: any) => {
-    e.stopPropagation();
-    document.body.style.cursor = 'grabbing';
-    isDragging.current = true;
-    touchStartTimeRef.current = Date.now();
-    lastInteractionTime.current = Date.now(); // Обновляем время последнего взаимодействия
-    isReturningToFront.current = false; // Прерываем возвращение при взаимодействии
-    accelerationRef.current = { x: 0, y: 0 };
-
-    if (!isMovedBack) {
-      moveStartTimeRef.current = Date.now();
-      setIsMovedBack(true);
-    }
-  };
-
-  const handlePointerUp = (e: any) => {
+  const handlePointerUp = useCallback((e: any) => {
     e.stopPropagation();
     document.body.style.cursor = 'grab';
     isDragging.current = false;
-  };
+  }, []);
 
-  const handlePointerMove = (e: any) => {
+  const handlePointerMove = useCallback((e: any) => {
     if (!isDragging.current) return;
     e.stopPropagation();
     
-    lastInteractionTime.current = Date.now(); // Обновляем время последнего взаимодействия
-    isReturningToFront.current = false; // Прерываем возвращение при взаимодействии
+    lastInteractionTime.current = Date.now();
+    isReturningToFront.current = false;
     
     const timeSinceStart = Date.now() - touchStartTimeRef.current;
     
-    // Еще быстрее разгон
-    const accelerationDuration = 100; // уменьшили со 150 до 100мс
+    const accelerationDuration = 100;
     const accelerationProgress = Math.min(timeSinceStart / accelerationDuration, 1);
     
-    // Более резкий старт
     const easeInFactor = Math.pow(accelerationProgress, 2);
     
-    // Значительно увеличили чувствительность
-    const sensitivity = 0.004; // увеличили с 0.0025 до 0.004
+    const sensitivity = 0.004;
     
     const movementX = (e.movementX || e.deltaX || 0) * sensitivity * easeInFactor;
     const movementY = (e.movementY || e.deltaY || 0) * sensitivity * easeInFactor;
@@ -327,19 +377,34 @@ const Logo: React.FC<LogoProps> = ({ onFirstMove }) => {
       y: movementY
     };
     
-    // Увеличили максимальную скорость вращения
-    const maxRotation = 0.2; // увеличили с 0.15 до 0.2
+    const maxRotation = 0.2;
     targetRotation.current.x += Math.max(Math.min(movementY, maxRotation), -maxRotation);
     targetRotation.current.y += Math.max(Math.min(movementX, maxRotation), -maxRotation);
-  };
+  }, []);
+
+  const handlers = useMemo(() => ({
+    handlePointerDown: (e: any) => {
+      e.stopPropagation();
+      document.body.style.cursor = 'grabbing';
+      isDragging.current = true;
+      touchStartTimeRef.current = Date.now();
+      lastInteractionTime.current = Date.now();
+      isReturningToFront.current = false;
+      accelerationRef.current = { x: 0, y: 0 };
+
+      if (!isMovedBack) {
+        const currentTime = Date.now();
+        moveStartTimeRef.current = currentTime;
+        setMoveStartTime(currentTime);
+        setIsMovedBack(true);
+      }
+    },
+    handlePointerUp,
+    handlePointerMove
+  }), [isMovedBack, setIsMovedBack, handlePointerUp, handlePointerMove, setMoveStartTime]);
 
   // Обновим useFrame
-  const clockRef = useRef<{ elapsedTime: number }>({ elapsedTime: 0 });
-
   useFrame(({ clock }) => {
-    // Сохраняем текущее время в ref
-    clockRef.current = clock;
-    
     if (meshRef.current && innerLightRef.current) {
       const time = clock.getElapsedTime();
       const currentTime = Date.now();
@@ -443,7 +508,7 @@ const Logo: React.FC<LogoProps> = ({ onFirstMove }) => {
         meshRef.current.rotation.x = baseRotationX + inertia.current.x + shakeOffsetX;
         meshRef.current.rotation.y = baseRotationY + inertia.current.y + shakeOffsetY;
         
-        // Более плавная левитация
+        // Более павная левитация
         const baseY = Math.sin(time * BREATHING_SPEED) * 0.08;
         const breathingY = Math.sin(time * (BREATHING_SPEED * 1.5)) * 0.02;
         meshRef.current.position.y = baseY + breathingY + shakeOffsetY;
@@ -493,31 +558,49 @@ const Logo: React.FC<LogoProps> = ({ onFirstMove }) => {
       );
 
       // Управляем интенсивностью внутреннего света
-      if (isMovedBack && timeSinceMove >= LIGHT_START_TIME && timeSinceMove <= LIGHT_END_TIME) {
-        const lightProgress = (timeSinceMove - LIGHT_START_TIME) / (LIGHT_END_TIME - LIGHT_START_TIME);
+      if ((timeSinceMove >= LIGHT_START_TIME && timeSinceMove <= LIGHT_END_TIME) ||
+          (timeSinceMove >= LIGHT_START_TIME_2 && timeSinceMove <= LIGHT_END_TIME_2)) {
+        
+        const lightProgress = timeSinceMove >= LIGHT_START_TIME_2
+            ? (timeSinceMove - LIGHT_START_TIME_2) / (LIGHT_END_TIME_2 - LIGHT_START_TIME_2)
+            : (timeSinceMove - LIGHT_START_TIME) / (LIGHT_END_TIME - LIGHT_START_TIME);
+        
         const intensity = Math.pow(Math.sin(lightProgress * Math.PI), 4);
         if (innerLightRef.current) {
-          innerLightRef.current.intensity = MAX_LIGHT_INTENSITY * intensity;
+            innerLightRef.current.intensity = MAX_LIGHT_INTENSITY * intensity;
         }
-        
-        // Уменьшили максимальную интенсивность вечения материала
-        baseMaterial.emissiveIntensity = 0.1 + intensity * 0.5; // Уменьшили с 0.9 до 0.5
+        materials.base.emissiveIntensity = 0.1 + intensity * 0.5;
       } else {
         if (innerLightRef.current) {
           innerLightRef.current.intensity = 0;
         }
-        baseMaterial.emissiveIntensity = 0.1;
+        materials.base.emissiveIntensity = 0.1;
+      }
+
+      // Добавляем влияние гироскопа на вращение
+      if (isGyroAvailable.current && !isDragging.current) {
+        if (!isMovedBack) {
+          // Когда фигура на месте
+          meshRef.current.rotation.x += gyroData.current.x;
+          meshRef.current.rotation.y += gyroData.current.y;
+          meshRef.current.rotation.z += gyroData.current.z * 0.5;
+          
+          // Добавляем небольшое смещение позиции
+          meshRef.current.position.x += gyroData.current.y * 0.1;
+          meshRef.current.position.y -= gyroData.current.x * 0.1;
+        } else {
+          // Когда фигура отлетела
+          meshRef.current.rotation.x += gyroData.current.x * 0.5;
+          meshRef.current.rotation.y += gyroData.current.y * 0.5;
+          meshRef.current.rotation.z += gyroData.current.z * 0.3;
+          
+          // Меньшее влияние на позицию после отлета
+          meshRef.current.position.x += gyroData.current.y * 0.05;
+          meshRef.current.position.y -= gyroData.current.x * 0.05;
+        }
       }
     }
   });
-
-  useEffect(() => {
-    if (isMovedBack && !moveStartTimeRef.current) {
-      const currentTime = Date.now();
-      moveStartTimeRef.current = currentTime;
-      onFirstMove(currentTime);
-    }
-  }, [isMovedBack, onFirstMove]);
 
   return (
     <>
@@ -525,14 +608,14 @@ const Logo: React.FC<LogoProps> = ({ onFirstMove }) => {
         ref={meshRef}
         onPointerOver={() => { document.body.style.cursor = 'grab'; }}
         onPointerOut={() => { document.body.style.cursor = 'auto'; }}
-        onPointerDown={handlePointerDown}
-        onPointerUp={handlePointerUp}
-        onPointerMove={handlePointerMove}
+        onPointerDown={handlers.handlePointerDown}
+        onPointerUp={handlers.handlePointerUp}
+        onPointerMove={handlers.handlePointerMove}
       >
         {/* Основной желтый суперэллипсоид */}
-        <mesh geometry={geometry} material={baseMaterial} />
+        <mesh geometry={geometry} material={materials.base} />
         
-        {/* Добавляем внутренний вет */}
+        {/* Добавляем внутренний свет */}
         <pointLight
           ref={innerLightRef}
           position={[0, 0, 0]}
@@ -547,13 +630,13 @@ const Logo: React.FC<LogoProps> = ({ onFirstMove }) => {
           {/* Передняя грань */}
           <mesh position={[0, 0, 0.902]} scale={[1.539, 1.539, 1]}>
             <planeGeometry />
-            <primitive object={logoMaterial.clone()} />
+            <primitive object={materials.logo.clone()} />
           </mesh>
 
           {/* Задняя грань */}
           <mesh position={[0, 0, -0.902]} rotation={[0, Math.PI, 0]} scale={[1.539, 1.539, 1]}>
             <planeGeometry />
-            <primitive object={logoMaterial.clone()} />
+            <primitive object={materials.logo.clone()} />
           </mesh>
         </group>
 
@@ -571,36 +654,14 @@ const Logo: React.FC<LogoProps> = ({ onFirstMove }) => {
   );
 };
 
-// Добавим интерфейсы для SocialIcons и TerminalOutput
-interface SocialIconsProps {
-  moveStartTime: number;
-}
-
-interface TerminalOutputProps {
-  moveStartTime: number;
-}
-
-// Обновим компонент App с правильной типизацией
 const App = () => {
-  const [moveStartTime, setMoveStartTime] = useState<number>(0);
-  const startTimeRef = useRef<number>(0);
-
-  const handleFirstMove = (time: number) => {
-    if (startTimeRef.current === 0) {
-      // Используем Date.now() как в ParticleSystem
-      const currentTime = Date.now();
-      startTimeRef.current = currentTime;
-      setMoveStartTime(currentTime);
-      console.log('App: Initial moveStartTime set to', currentTime);
-    }
-  };
-
   return (
     <div className="app">
       <AudioPlayer />
+      <SocialAndText />
       <Canvas
         camera={{ 
-          position: [0, 0, 2],
+          position: [0, 0, 2.8],
           fov: 45,
           near: 0.1,
           far: 1000
@@ -612,10 +673,23 @@ const App = () => {
         }}
       >
         <color attach="background" args={['#000000']} />
+        
+        <ambientLight intensity={0.6} />
+        <directionalLight 
+          position={[5, 5, 5]} 
+          intensity={2.0}
+          color="#ffffff"
+        />
+        <directionalLight 
+          position={[-5, -5, -5]} 
+          intensity={1.5}
+          color="#ffffff"
+        />
+        <pointLight position={[3, 3, 3]} intensity={1.0} color="#ffffff" />
+        <pointLight position={[-3, -3, -3]} intensity={0.8} color="#ffffff" />
+        
         <Suspense fallback={null}>
-          <Logo onFirstMove={handleFirstMove} />
-          <SocialIcons moveStartTime={startTimeRef.current} />
-          <TerminalOutput moveStartTime={startTimeRef.current} />
+          <Logo />
         </Suspense>
       </Canvas>
     </div>

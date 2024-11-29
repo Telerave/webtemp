@@ -25,6 +25,8 @@ const ParticleSystem: React.FC<ParticleSystemProps> = ({
   const FADE_IN_DURATION = 3000; // 3 секунды для появления
   const SHAKE_START_TIME = 26000; // 26 секунд от начала движения
   const SHAKE_END_TIME = 33000; // 33 секунд от начала движения
+  const SHAKE_START_TIME_2 = 59000; // 59 секунд
+  const SHAKE_END_TIME_2 = 65000;   // 65 секунд
   const MAX_PARTICLE_OPACITY = 2.5; // Увеличили максимальную яркость
   const NORMAL_PARTICLE_OPACITY = 0.9; // Обычная яркость
 
@@ -79,11 +81,15 @@ const ParticleSystem: React.FC<ParticleSystemProps> = ({
     if (active) {
       let targetOpacity = NORMAL_PARTICLE_OPACITY;
 
-      if (timeSinceMove >= SHAKE_START_TIME && timeSinceMove <= SHAKE_END_TIME) {
-        const shakeProgress = (timeSinceMove - SHAKE_START_TIME) / (SHAKE_END_TIME - SHAKE_START_TIME);
-        const intensityMultiplier = Math.pow(Math.sin(shakeProgress * Math.PI), 4); // Более плавное изменение
-        targetOpacity = NORMAL_PARTICLE_OPACITY + (MAX_PARTICLE_OPACITY - NORMAL_PARTICLE_OPACITY) * intensityMultiplier;
+      if ((timeSinceMove >= SHAKE_START_TIME && timeSinceMove <= SHAKE_END_TIME) ||
+          (timeSinceMove >= SHAKE_START_TIME_2 && timeSinceMove <= SHAKE_END_TIME_2)) {
         
+        const shakeProgress = timeSinceMove >= SHAKE_START_TIME_2 
+            ? (timeSinceMove - SHAKE_START_TIME_2) / (SHAKE_END_TIME_2 - SHAKE_START_TIME_2)
+            : (timeSinceMove - SHAKE_START_TIME) / (SHAKE_END_TIME - SHAKE_START_TIME);
+        
+        const intensityMultiplier = Math.pow(Math.sin(shakeProgress * Math.PI), 4);
+        targetOpacity = NORMAL_PARTICLE_OPACITY + (MAX_PARTICLE_OPACITY - NORMAL_PARTICLE_OPACITY) * intensityMultiplier;
         materialRef.current.size = 0.015 + 0.01 * intensityMultiplier;
       } else {
         materialRef.current.size = 0.015;
