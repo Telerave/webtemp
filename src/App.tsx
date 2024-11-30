@@ -435,24 +435,39 @@ const Logo = () => {
     
     const easeInFactor = Math.pow(accelerationProgress, 2);
     
-    const sensitivity = 0.004;
+    // Увеличиваем базовую чувствительность
+    const sensitivity = e.pointerType === 'touch' ? 0.008 : 0.004;
     
-    const movementX = (e.movementX || e.deltaX || 0) * sensitivity * easeInFactor;
-    const movementY = (e.movementY || e.deltaY || 0) * sensitivity * easeInFactor;
+    // Получаем движение с учетом типа устройства
+    let movementX, movementY;
+    
+    if (e.pointerType === 'touch') {
+      // Для тачскрина используем deltaX/Y с повышенной чувствительностью
+      movementX = (e.deltaX || 0) * 1.5;
+      movementY = (e.deltaY || 0) * 1.5;
+    } else {
+      // Для мыши оставляем текущее поведение
+      movementX = e.movementX || e.deltaX || 0;
+      movementY = e.movementY || e.deltaY || 0;
+    }
+    
+    const finalMovementX = movementX * sensitivity * easeInFactor;
+    const finalMovementY = movementY * sensitivity * easeInFactor;
     
     accelerationRef.current = {
-      x: movementX,
-      y: movementY
+      x: finalMovementX,
+      y: finalMovementY
     };
     
     const maxRotation = 0.2;
-    targetRotation.current.x += Math.max(Math.min(movementY, maxRotation), -maxRotation);
-    targetRotation.current.y += Math.max(Math.min(movementX, maxRotation), -maxRotation);
+    targetRotation.current.x += Math.max(Math.min(finalMovementY, maxRotation), -maxRotation);
+    targetRotation.current.y += Math.max(Math.min(finalMovementX, maxRotation), -maxRotation);
   }, []);
 
   const handlers = useMemo(() => ({
     handlePointerDown: (e: any) => {
       e.stopPropagation();
+      e.target.setPointerCapture(e.pointerId); // Добавляем захват указателя
       document.body.style.cursor = 'grabbing';
       isDragging.current = true;
       touchStartTimeRef.current = Date.now();

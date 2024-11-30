@@ -2,7 +2,7 @@
   "name": "telerave-web",
   "version": "0.1.0",
   "private": true,
-  "homepage": "https://telerave.github.io/tempweb",
+  "homepage": "/",
   "dependencies": {
     "@react-spring/three": "^9.7.5",
     "@react-three/drei": "^9.117.3",

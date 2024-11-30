@@ -37,6 +37,7 @@ const SocialIcons = styled.div<StyledProps>`
   will-change: opacity, visibility;
   justify-content: center;
   align-items: center;
+  pointer-events: auto;
 `;
 
 const glitchFlicker = keyframes`
@@ -216,6 +217,8 @@ const SocialLink = styled.a`
   display: flex;
   align-items: center;
   justify-content: center;
+  pointer-events: auto;
+  z-index: 1001;
 
   svg {
     display: block;
