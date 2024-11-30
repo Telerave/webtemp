@@ -1,4 +1,4 @@
-import create from 'zustand';
+import { create } from 'zustand';
 import { SetState } from 'zustand';
 
 interface TimelineState {
@@ -15,14 +15,8 @@ export const useTimelineStore = create<TimelineState>((set: SetState<TimelineSta
   moveStartTime: 0,
   isAudioPlaying: false,
   hasInteracted: false,
-  setMoveStartTime: (time: number) => {
-    console.log('Setting moveStartTime:', time);
-    set({ moveStartTime: time });
-  },
-  setAudioPlaying: (playing: boolean) => {
-    console.log('Setting isAudioPlaying:', playing);
-    set({ isAudioPlaying: playing });
-  },
+  setMoveStartTime: (time: number) => set({ moveStartTime: time }),
+  setAudioPlaying: (playing: boolean) => set({ isAudioPlaying: playing }),
   setHasInteracted: (interacted: boolean) => set({ hasInteracted: interacted }),
   resetTimeline: () => set({ moveStartTime: 0, isAudioPlaying: false }),
 })); 

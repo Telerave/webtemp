@@ -2,7 +2,11 @@ import React, { useEffect, useState } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { useTimelineStore } from '../store/TimelineStore';
 
-const Container = styled.div`
+interface StyledProps {
+  $show: boolean;
+}
+
+const Container = styled.div<StyledProps>`
   position: fixed;
   bottom: 0;
   left: 0;
@@ -14,20 +18,21 @@ const Container = styled.div`
   justify-content: flex-start;
   padding-top: 10px;
   z-index: 1000;
+  opacity: ${(props: StyledProps) => (props.$show ? 1 : 0)};
+  visibility: ${(props: StyledProps) => (props.$show ? 'visible' : 'hidden')};
+  transition: opacity 6s cubic-bezier(0.4, 0.0, 0.2, 1), visibility 6s cubic-bezier(0.4, 0.0, 0.2, 1);
+  will-change: opacity, visibility;
+  pointer-events: none;
 `;
 
-interface AnimatedProps {
-  show: boolean | null;
-}
-
-const SocialIcons = styled.div<AnimatedProps>`
+const SocialIcons = styled.div<StyledProps>`
   position: relative;
   margin-top: auto;
   margin-bottom: 25px;
   display: flex;
   gap: 15px;
-  opacity: ${props => (props.show ? 1 : 0)};
-  visibility: ${props => (props.show ? 'visible' : 'hidden')};
+  opacity: ${(props: StyledProps) => (props.$show ? 1 : 0)};
+  visibility: ${(props: StyledProps) => (props.$show ? 'visible' : 'hidden')};
   transition: opacity 6s cubic-bezier(0.4, 0.0, 0.2, 1), visibility 6s cubic-bezier(0.4, 0.0, 0.2, 1);
   will-change: opacity, visibility;
   justify-content: center;
@@ -240,13 +245,13 @@ const Separator = styled.span`
   text-transform: uppercase;
 `;
 
-const TextContainer = styled.div<AnimatedProps>`
+const TextContainer = styled.div<StyledProps>`
   position: absolute;
   bottom: 110px;
   left: 0;
   right: 0;
-  opacity: ${props => (props.show ? 1 : 0)};
-  visibility: ${props => (props.show ? 'visible' : 'hidden')};
+  opacity: ${(props: StyledProps) => (props.$show ? 1 : 0)};
+  visibility: ${(props: StyledProps) => (props.$show ? 'visible' : 'hidden')};
   transition: opacity 6s cubic-bezier(0.4, 0.0, 0.2, 1), visibility 6s cubic-bezier(0.4, 0.0, 0.2, 1);
   text-align: center;
   will-change: opacity, visibility;
@@ -256,7 +261,7 @@ const Text = styled.h2`
   color: #ffc600;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "San Francisco", "Helvetica Neue", sans-serif;
   font-size: 16px;
-  font-weight: 400;
+  font-weight: 700;
   margin: 0;
   letter-spacing: 0.5px;
   line-height: 1.2;
@@ -305,38 +310,32 @@ const SocialAndText: React.FC = () => {
   }
 
   return (
-    <Container>
-      {showMainText !== null && (
-        <TextContainer show={showMainText}>
-          <Text>SONUS  LIBERTAS</Text>
-        </TextContainer>
-      )}
+    <Container $show={true}>
+      <TextContainer $show={showMainText === true}>
+        <Text>SONUS LIBERTAS</Text>
+      </TextContainer>
       
-      {showSoonText !== null && (
-        <TextContainer show={showSoonText}>
-          <Text>REVOLUTION</Text>
-        </TextContainer>
-      )}
+      <TextContainer $show={showSoonText === true}>
+        <Text>TEMPUS...</Text>
+      </TextContainer>
 
-      {showSocial !== null && (
-        <SocialIcons show={showSocial}>
-          <SocialLink 
-            href="https://www.youtube.com/@telerave"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <YouTubeLogo />
-          </SocialLink>
-          <Separator>|</Separator>
-          <SocialLink 
-            href="https://instagram.com/teleraver"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <InstagramLogo />
-          </SocialLink>
-        </SocialIcons>
-      )}
+      <SocialIcons $show={showSocial === true}>
+        <SocialLink 
+          href="https://www.youtube.com/@telerave"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <YouTubeLogo />
+        </SocialLink>
+        <Separator>|</Separator>
+        <SocialLink 
+          href="https://instagram.com/teleraver"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <InstagramLogo />
+        </SocialLink>
+      </SocialIcons>
     </Container>
   );
 };

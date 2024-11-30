@@ -11,9 +11,12 @@ import AudioPlayer from './components/AudioPlayer';
 import ParticleSystem from './components/ParticleSystem';
 import { useTimelineStore } from './store/TimelineStore';
 import SocialAndText from './components/SocialAndText';
+import { SVGLoader } from 'three/examples/jsm/loaders/SVGLoader';
+import { mergeBufferGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils';
 
-// Импортируем логотип
-import logoBlackElements from './assets/logo-black-elements.png';
+// Заменяем импорт PNG на SVG
+// import logoBlackElements from './assets/logo-black-elements.png';
+import logoBlackElements from './assets/logo-black-elements.svg';
 
 // В начале файла добавим хук для отслеживания движений
 const useMouseRotation = (sensitivity = 0.008) => {
@@ -182,6 +185,71 @@ interface GyroscopeData {
   z: number;
 }
 
+// Обновляем константы
+const LOGO_CONSTANTS = {
+  SCALE: 1.0, // Увеличили с 0.85 до 1.0
+  VERTICAL_OFFSET: 0.25, // Смещение всего логотипа вверх
+} as const;
+
+// Обновляем функцию создания геометрии
+const createLogoGeometry = (svgContent: string, glassesDepth: number, mouthDepth: number) => {
+  const loader = new SVGLoader();
+  const svgData = loader.parse(svgContent);
+  const paths = svgData.paths;
+  
+  // Явно разделяем пути на очки (первые два пути) и рот (последний путь)
+  const glassesShapes = paths.slice(0, 2).map(path => path.toShapes(true)).flat();
+  const mouthShapes = paths[2].toShapes(true);
+  
+  // Создаем геометрию для очков с более выраженной огранкой
+  const glassesGeometry = new THREE.ExtrudeGeometry(glassesShapes, {
+    steps: 3, // Увеличили количество шагов
+    depth: glassesDepth,
+    bevelEnabled: true,
+    bevelThickness: 0.03, // Увеличили толщину фаски
+    bevelSize: 0.025,     // Немного увеличили размер фаски
+    bevelOffset: 0,
+    bevelSegments: 5      // Увеличили количество сегментов для более четкой огранки
+  });
+  
+  // Создаем геометрию для рта с обработанными гранями
+  const mouthGeometry = new THREE.ExtrudeGeometry(mouthShapes, {
+    steps: 2,
+    depth: mouthDepth,
+    bevelEnabled: true,
+    bevelThickness: 0.01, // Меньше чем у очков
+    bevelSize: 0.01,      // Меньше чем у очков
+    bevelOffset: 0,
+    bevelSegments: 3
+  });
+  
+  // Объединяем геометрии, сохраняя пропорции
+  const geometry = mergeBufferGeometries([
+    glassesGeometry,
+    mouthGeometry
+  ]);
+  
+  // Центрируем и масштабируем, сохраняя пропорции
+  geometry.computeBoundingBox();
+  const center = new THREE.Vector3();
+  geometry.boundingBox!.getCenter(center);
+  
+  const size = new THREE.Vector3();
+  geometry.boundingBox!.getSize(size);
+  
+  const scale = 1 / size.y;
+  
+  // Применяем преобразования с учетом констант
+  geometry.translate(
+    -center.x, 
+    -center.y + size.y * LOGO_CONSTANTS.VERTICAL_OFFSET,
+    0
+  );
+  geometry.scale(scale * LOGO_CONSTANTS.SCALE, -scale * LOGO_CONSTANTS.SCALE, 1);
+  
+  return geometry;
+};
+
 // Обновляем компонент Logo
 const Logo = () => {
   const meshRef = useRef<THREE.Group>(null);
@@ -193,7 +261,7 @@ const Logo = () => {
   const texture = useTexture(logoBlackElements);
   
   const materials = useMemo(() => {
-    texture.encoding = THREE.sRGBEncoding;
+    texture.colorSpace = THREE.SRGBColorSpace;
     texture.minFilter = THREE.LinearFilter;
     texture.magFilter = THREE.LinearFilter;
     texture.needsUpdate = true;
@@ -531,7 +599,7 @@ const Logo = () => {
                       Math.pow(1 - moveProgress, 2.5);
         meshRef.current.position.z = targetZ * easeOutProgress + bounce + shakeOffsetZ;
         
-        // Плавное вращение после отлёта
+        // Плавно вращение после отлёта
         meshRef.current.rotation.x = 0.2 + autoRotationRef.current.x + inertia.current.x + shakeOffsetX;
         meshRef.current.rotation.y = -0.3 + autoRotationRef.current.y + inertia.current.y + shakeOffsetY;
         
@@ -550,7 +618,7 @@ const Logo = () => {
       const scale = 1 + basePulse + breathingPulse;
       meshRef.current.scale.setScalar(scale);
 
-      // Обновляем позицию объекта для системы частиц
+      // Обновляем позицию объекта дя системы частиц
       objectPosition.current.set(
         meshRef.current.position.x,
         meshRef.current.position.y,
@@ -602,6 +670,49 @@ const Logo = () => {
     }
   });
 
+  // В начале файла, после импортов
+  const svgContent = `<?xml version="1.0" standalone="no"?>
+  <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 20010904//EN"
+   "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd">
+  <svg version="1.0" xmlns="http://www.w3.org/2000/svg"
+   width="3189.000000pt" height="3189.000000pt" viewBox="0 0 3189.000000 3189.000000"
+   preserveAspectRatio="xMidYMid meet">
+  <g transform="translate(0.000000,3189.000000) scale(0.100000,-0.100000)"
+  fill="#000000" stroke="none">
+  <path d="M3560 15940 l0 -2660 5315 0 5315 0 0 2660 0 2660 -5315 0 -5315 0 0
+  -2660z"/>
+  <path d="M17690 15940 l0 -2660 5315 0 5315 0 0 2660 0 2660 -5315 0 -5315 0
+  0 -2660z"/>
+  <path d="M20150 9684 c-130 -12 -346 -48 -463 -78 -932 -239 -1674 -981 -1913
+  -1912 -60 -237 -78 -386 -78 -664 0 -278 18 -427 78 -664 188 -732 692 -1361
+  1368 -1705 1028 -524 2272 -327 3088 489 404 405 662 917 751 1491 33 207 33
+  571 0 778 -44 287 -120 529 -247 786 -383 781 -1128 1325 -1990 1455 -134 20
+  -480 34 -594 24z"/>
+  </g>
+  </svg>`;
+
+  const svgGeometry = useMemo(() => createLogoGeometry(
+    svgContent,
+    0.054, // толщина очков
+    0.0054  // толщина рта
+  ), []);
+
+  const blackMaterial = useMemo(() => {
+    return new THREE.MeshPhysicalMaterial({
+      color: '#000000',
+      metalness: 0.95,         // Увеличили металличность
+      roughness: 0.1,          // Уменьшили шероховатость
+      transmission: 0.15,      // Немного уменьшили прозрачность
+      thickness: 0.5,
+      envMapIntensity: 2.0,    // Увеличили интенсивность отражений
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.05, // Уменьшили шероховатость покрытия
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.95            // Немного увеличили непрозрачность
+    });
+  }, []);
+
   return (
     <>
       <group 
@@ -625,19 +736,24 @@ const Logo = () => {
           decay={2}
         />
         
-        {/* Логотипы только на передней и задней гранях */}
+        {/* Объемные черные элементы логотипа */}
         <group>
-          {/* Передняя грань */}
-          <mesh position={[0, 0, 0.902]} scale={[1.539, 1.539, 1]}>
-            <planeGeometry />
-            <primitive object={materials.logo.clone()} />
-          </mesh>
-
-          {/* Задняя грань */}
-          <mesh position={[0, 0, -0.902]} rotation={[0, Math.PI, 0]} scale={[1.539, 1.539, 1]}>
-            <planeGeometry />
-            <primitive object={materials.logo.clone()} />
-          </mesh>
+          {/* Передняя сторона */}
+          <mesh 
+            position={[0, 0, 0.91]}
+            scale={[0.7, 0.7, 1]} // Уменьшаем с 0.8 до 0.7
+            geometry={svgGeometry}
+            material={blackMaterial}
+          />
+          
+          {/* Задняя сторона */}
+          <mesh 
+            position={[0, 0, -0.91]}
+            rotation={[0, Math.PI, 0]}
+            scale={[0.7, 0.7, 1]} // Уменьшаем с 0.8 до 0.7
+            geometry={svgGeometry}
+            material={blackMaterial}
+          />
         </group>
 
         {/* Освещение */}

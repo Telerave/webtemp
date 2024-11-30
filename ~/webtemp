@@ -1,0 +1,6 @@
+yarn add styled-components @types/styled-components 
+rm -rf node_modules
+rm yarn.lock
+yarn cache clean
+yarn install 
+yarn start 
