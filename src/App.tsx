@@ -415,6 +415,12 @@ const Logo = () => {
     };
   };
 
+  const handlePointerUp = useCallback((e: any) => {
+    e.stopPropagation();
+    document.body.style.cursor = 'grab';
+    isDragging.current = false;
+  }, []);
+
   const handlePointerMove = useCallback((e: any) => {
     if (!isDragging.current) return;
     e.stopPropagation();
@@ -423,64 +429,34 @@ const Logo = () => {
     isReturningToFront.current = false;
     
     const timeSinceStart = Date.now() - touchStartTimeRef.current;
+    
     const accelerationDuration = 100;
     const accelerationProgress = Math.min(timeSinceStart / accelerationDuration, 1);
+    
     const easeInFactor = Math.pow(accelerationProgress, 2);
     
-    // Увеличенная чувствительность для тачскрина
-    const sensitivity = e.pointerType === 'touch' ? 0.012 : 0.004;
+    // Разная чувствительность для мыши и тач-событий
+    const sensitivity = e.pointerType === 'touch' ? 0.032 : 0.004;
     
-    // Для тачскрина используем clientX/Y вместо deltaX/Y
-    let movementX, movementY;
-    
-    if (e.pointerType === 'touch') {
-      const currentX = e.clientX;
-      const currentY = e.clientY;
-      
-      if (typeof touchStartTimeRef.current.lastX === 'number') {
-        movementX = currentX - touchStartTimeRef.current.lastX;
-        movementY = currentY - touchStartTimeRef.current.lastY;
-      } else {
-        movementX = 0;
-        movementY = 0;
-      }
-      
-      // Сохраняем текущие координаты для следующего кадра
-      touchStartTimeRef.current.lastX = currentX;
-      touchStartTimeRef.current.lastY = currentY;
-    } else {
-      movementX = e.movementX || 0;
-      movementY = e.movementY || 0;
-    }
-    
-    const finalMovementX = movementX * sensitivity * easeInFactor;
-    const finalMovementY = movementY * sensitivity * easeInFactor;
+    const movementX = (e.movementX || e.deltaX || 0) * sensitivity * easeInFactor;
+    const movementY = (e.movementY || e.deltaY || 0) * sensitivity * easeInFactor;
     
     accelerationRef.current = {
-      x: finalMovementX,
-      y: finalMovementY
+      x: movementX,
+      y: movementY
     };
     
     const maxRotation = 0.2;
-    targetRotation.current.x += Math.max(Math.min(finalMovementY, maxRotation), -maxRotation);
-    targetRotation.current.y += Math.max(Math.min(finalMovementX, maxRotation), -maxRotation);
+    targetRotation.current.x += Math.max(Math.min(movementY, maxRotation), -maxRotation);
+    targetRotation.current.y += Math.max(Math.min(movementX, maxRotation), -maxRotation);
   }, []);
 
-  // Обновляем handlePointerDown для сохранения начальных координат касания
   const handlers = useMemo(() => ({
     handlePointerDown: (e: any) => {
       e.stopPropagation();
-      e.target.setPointerCapture(e.pointerId);
       document.body.style.cursor = 'grabbing';
       isDragging.current = true;
-      
-      // Сохраняем начальные координаты касания
-      touchStartTimeRef.current = {
-        time: Date.now(),
-        lastX: e.clientX,
-        lastY: e.clientY
-      };
-      
+      touchStartTimeRef.current = Date.now();
       lastInteractionTime.current = Date.now();
       isReturningToFront.current = false;
       accelerationRef.current = { x: 0, y: 0 };
@@ -492,18 +468,9 @@ const Logo = () => {
         setIsMovedBack(true);
       }
     },
-    handlePointerUp: (e: any) => {
-      e.stopPropagation();
-      document.body.style.cursor = 'grab';
-      isDragging.current = false;
-      // Очищаем сохраненные координаты
-      if (touchStartTimeRef.current) {
-        delete touchStartTimeRef.current.lastX;
-        delete touchStartTimeRef.current.lastY;
-      }
-    },
+    handlePointerUp,
     handlePointerMove
-  }), [isMovedBack, setIsMovedBack, handlePointerMove, setMoveStartTime]);
+  }), [isMovedBack, setIsMovedBack, handlePointerUp, handlePointerMove, setMoveStartTime]);
 
   // Обновим useFrame
   useFrame(({ clock }) => {
